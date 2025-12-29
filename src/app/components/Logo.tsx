@@ -1,5 +1,8 @@
 import React from 'react';
-import logoImage from 'figma:asset/9912caf33a17623d5c9a5067ec11389749d17479.png';
+//import logoImage from 'figma:asset/9912caf33a17623d5c9a5067ec11389749d17479.png';
+export function Logo() {
+  return <img src="/images/logo.png" alt="AI Product Day Logo" />;
+}
 
 interface LogoProps {
   className?: string;
