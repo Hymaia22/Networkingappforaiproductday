@@ -72,7 +72,7 @@ export const LoginScreen: React.FC = () => {
         {/* Info */}
         <div className="mt-8 p-4 bg-gray-900 rounded-lg border border-gray-800">
           <p className="text-sm text-gray-400 text-center">
-            💡 En mode test, utilisez les codes fournis dans le scanner
+            Autorisez l'accès à la caméra pour scanner votre badge QR
           </p>
         </div>
       </div>

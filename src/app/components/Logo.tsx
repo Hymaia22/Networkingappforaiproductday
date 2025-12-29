@@ -1,4 +1,5 @@
 import React from 'react';
+import logoImage from 'figma:asset/be7fb858b7b30ceea243eaa3af0fb0debf3d7468.png';
 
 interface LogoProps {
   className?: string;
@@ -6,11 +7,7 @@ interface LogoProps {
   variant?: 'full' | 'icon';
 }
 
-export const Logo: React.FC<LogoProps> = ({ 
-  className = '', 
-  size = 'md', 
-  variant = 'full' 
-}) => {
+export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md', variant = 'full' }) => {
   const sizes = {
     sm: 'h-8',
     md: 'h-12',
@@ -20,12 +17,10 @@ export const Logo: React.FC<LogoProps> = ({
   return (
     <div className={`flex items-center ${className}`}>
       <img 
-        src="/images/logo.png" 
-        alt="AI Product Day Logo" 
+        src={logoImage} 
+        alt="AI Product Day" 
         className={`${sizes[size]} w-auto object-contain`}
       />
     </div>
   );
 };
-
-export default Logo;

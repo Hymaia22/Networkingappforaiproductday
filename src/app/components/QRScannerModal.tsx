@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, QrCode, Zap } from 'lucide-react';
+import { X, Camera, CircleAlert, Keyboard } from 'lucide-react';
+import { Scanner } from '@yudiel/react-qr-scanner';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -18,6 +19,9 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   title = "Scanner un badge"
 }) => {
   const [manualCode, setManualCode] = useState('');
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
   if (!isOpen) return null;
 
@@ -26,17 +30,44 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     if (manualCode.trim()) {
       onScan(manualCode.trim());
       setManualCode('');
+      setShowManualEntry(false);
     }
   };
 
-  // Quick test barcodes for development
-  const quickTestCodes = [
-    { code: 'AIDAY2025001', label: 'Marie (TechCorp)', role: 'Product Manager' },
-    { code: 'AIDAY2025002', label: 'Thomas (Innovate)', role: 'CTO' },
-    { code: 'AIDAY2025003', label: 'Sophie (AI Start)', role: 'Data Scientist' },
-    { code: 'AIDAY2025004', label: 'Laurent (Digital)', role: 'CEO' },
-    { code: 'AIDAY2025005', label: 'Julie (MLOps)', role: 'ML Engineer' }
-  ];
+  const handleQRScan = (detectedCodes: any[]) => {
+    if (detectedCodes && detectedCodes.length > 0) {
+      const result = detectedCodes[0].rawValue;
+      if (result) {
+        onScan(result);
+        onClose();
+      }
+    }
+  };
+
+  const handleError = (error: any) => {
+    console.error('QR Scanner Error:', error);
+    
+    if (error?.name === 'NotAllowedError' || error?.message?.includes('Permission denied')) {
+      setPermissionDenied(true);
+      setShowManualEntry(true);
+      setError('Accès à la caméra refusé. Utilisez la saisie manuelle ci-dessous.');
+    } else if (error?.name === 'NotFoundError') {
+      setPermissionDenied(true);
+      setShowManualEntry(true);
+      setError('Aucune caméra détectée sur cet appareil. Utilisez la saisie manuelle.');
+    } else if (error?.name === 'NotReadableError') {
+      setPermissionDenied(true);
+      setShowManualEntry(true);
+      setError('La caméra est déjà utilisée par une autre application.');
+    } else if (error?.name === 'NotSupportedError' || error?.message?.includes('https')) {
+      setPermissionDenied(true);
+      setShowManualEntry(true);
+      setError('⚠️ HTTPS requis pour la caméra. Utilisez la saisie manuelle.');
+    } else {
+      setError('Erreur d\'accès à la caméra. Basculement vers la saisie manuelle.');
+      setShowManualEntry(true);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 animate-in fade-in duration-200">
@@ -54,67 +85,110 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
         {/* Content */}
         <div className="p-6">
-          {/* QR Scanner Placeholder */}
-          <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-8 mb-6 flex flex-col items-center justify-center min-h-[200px] border-2 border-dashed border-gray-300">
-            <QrCode className="w-16 h-16 text-blue-500 mb-3 animate-pulse" />
-            <p className="text-gray-700 text-center font-medium">
-              Scanner QR simulé
-            </p>
-            <p className="text-sm text-gray-500 text-center mt-1">
-              En production, la caméra s'ouvrira ici
-            </p>
-          </div>
-
-          {/* Manual Entry */}
-          <form onSubmit={handleManualSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="barcode" className="text-gray-700">
-                Ou saisissez le code manuellement
-              </Label>
-              <div className="flex gap-2 mt-2">
-                <Input
-                  id="barcode"
-                  type="text"
-                  placeholder="Ex: AIDAY2025001"
-                  value={manualCode}
-                  onChange={(e) => setManualCode(e.target.value)}
-                  className="flex-1"
-                />
-                <Button type="submit" disabled={!manualCode.trim()}>
-                  Scanner
-                </Button>
+          {/* Error Message */}
+          {error && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+              <div className="flex gap-3">
+                <CircleAlert className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-amber-900 mb-1">{error}</p>
+                  {permissionDenied && (
+                    <div className="text-xs text-amber-700 space-y-1 mt-2">
+                      <p className="font-medium">💡 Pour activer la caméra :</p>
+                      <ul className="list-disc list-inside space-y-0.5 ml-2">
+                        <li>Vérifiez que le site est en HTTPS</li>
+                        <li>Cliquez sur l'icône 🔒 dans la barre d'adresse</li>
+                        <li>Autorisez l'accès à la caméra</li>
+                        <li>Rechargez la page et réessayez</li>
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </form>
+          )}
 
-          {/* Quick Test Codes */}
-          <div className="mt-6">
-            <div className="flex items-center gap-2 mb-3">
-              <Zap className="w-4 h-4 text-amber-500" />
-              <p className="text-sm font-medium text-gray-700">Codes de test rapides</p>
-            </div>
-            <div className="grid grid-cols-1 gap-2 max-h-[200px] overflow-y-auto">
-              {quickTestCodes.map((item) => (
-                <button
-                  key={item.code}
-                  onClick={() => {
-                    onScan(item.code);
-                    setManualCode('');
+          {!showManualEntry ? (
+            <>
+              {/* QR Scanner with Camera */}
+              <div className="bg-black rounded-lg overflow-hidden mb-4" style={{ height: '300px' }}>
+                <Scanner
+                  onScan={handleQRScan}
+                  onError={handleError}
+                  styles={{
+                    container: { 
+                      width: '100%', 
+                      height: '100%'
+                    },
+                    video: {
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover'
+                    }
                   }}
-                  className="text-left px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 rounded-lg transition-all border border-blue-200 hover:border-blue-300 hover:shadow-sm"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-mono text-sm text-blue-700 font-medium">{item.code}</span>
-                      <div className="text-sm text-gray-700 mt-1">{item.label}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{item.role}</div>
-                    </div>
-                    <QrCode className="w-5 h-5 text-blue-400" />
+                />
+              </div>
+
+              <div className="flex items-center gap-2 mb-3">
+                <Camera className="w-4 h-4 text-blue-500" />
+                <p className="text-sm text-gray-600">
+                  Placez le QR code du badge devant la caméra
+                </p>
+              </div>
+
+              <Button
+                onClick={() => setShowManualEntry(true)}
+                variant="outline"
+                className="w-full"
+              >
+                <Keyboard className="w-4 h-4 mr-2" />
+                Saisir le code manuellement
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* Manual Entry */}
+              <form onSubmit={handleManualSubmit} className="space-y-4">
+                <div>
+                  <Label htmlFor="barcode" className="text-gray-700 flex items-center gap-2">
+                    <Keyboard className="w-4 h-4" />
+                    Saisissez le code du badge
+                  </Label>
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      id="barcode"
+                      type="text"
+                      placeholder="Ex: 6623809483"
+                      value={manualCode}
+                      onChange={(e) => setManualCode(e.target.value)}
+                      className="flex-1"
+                      autoFocus
+                    />
+                    <Button type="submit" disabled={!manualCode.trim()}>
+                      Valider
+                    </Button>
                   </div>
-                </button>
-              ))}
-            </div>
-          </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Le code se trouve sur le badge du participant
+                  </p>
+                </div>
+              </form>
+
+              {!permissionDenied && (
+                <Button
+                  onClick={() => {
+                    setShowManualEntry(false);
+                    setError(null);
+                  }}
+                  variant="outline"
+                  className="w-full mt-4"
+                >
+                  <Camera className="w-4 h-4 mr-2" />
+                  Retour au scanner caméra
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>

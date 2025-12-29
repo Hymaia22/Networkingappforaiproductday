@@ -135,9 +135,6 @@ export const AdminScreen: React.FC = () => {
               <Button type="submit" className="w-full">
                 Se connecter
               </Button>
-              <p className="text-xs text-gray-500 text-center">
-                💡 Test: admin@aiproductday.com / admin123
-              </p>
             </form>
           </CardContent>
         </Card>
