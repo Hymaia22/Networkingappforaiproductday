@@ -16,8 +16,11 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<Participant | null>(null);
-  const [scans, setScans] = useState<Scan[]>([]);
+  const [currentUser, setCurrentUser] = useState<Participant | null>(() => mockAuth.getCurrentUser());
+  const [scans, setScans] = useState<Scan[]>(() => {
+    const user = mockAuth.getCurrentUser();
+    return user ? mockScansDB.getAll(user.id) : [];
+  });
   const [settings, setSettings] = useState<Settings>(mockSettingsDB.get());
 
   useEffect(() => {

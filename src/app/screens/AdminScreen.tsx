@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Upload, LogOut, Settings, Users, BarChart3, Download, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
@@ -18,6 +18,28 @@ export const AdminScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const { settings, updateSettings } = useApp();
   const navigate = useNavigate();
+  const [totalParticipants, setTotalParticipants] = useState(() => mockParticipantsDB.getAll().length);
+  const [importMeta, setImportMeta] = useState(() => mockParticipantsDB.getImportMetadata());
+  const [participants, setParticipants] = useState(() => mockParticipantsDB.getAll());
+  const [participantSearch, setParticipantSearch] = useState('');
+
+  const setAdminCookie = () => {
+    document.cookie = `aiday_admin_session=1; Max-Age=${7 * 24 * 60 * 60}; Path=/; SameSite=Lax`;
+  };
+
+  const clearAdminCookie = () => {
+    document.cookie = 'aiday_admin_session=; Max-Age=0; Path=/; SameSite=Lax';
+  };
+
+  const hasAdminCookie = (): boolean => {
+    return /(?:^|; )aiday_admin_session=1(?:;|$)/.test(document.cookie);
+  };
+
+  useEffect(() => {
+    if (hasAdminCookie()) {
+      setIsLoggedIn(true);
+    }
+  }, []);
 
   // Admin settings state
   const [homeTitle, setHomeTitle] = useState(settings.home_title);
@@ -29,6 +51,7 @@ export const AdminScreen: React.FC = () => {
     
     if (mockAdminAuth.login(email, password)) {
       setIsLoggedIn(true);
+      setAdminCookie();
       toast.success('Connexion admin réussie');
     } else {
       toast.error('Identifiants incorrects');
@@ -39,6 +62,7 @@ export const AdminScreen: React.FC = () => {
     setIsLoggedIn(false);
     setEmail('');
     setPassword('');
+    clearAdminCookie();
     navigate('/login');
   };
 
@@ -55,6 +79,13 @@ export const AdminScreen: React.FC = () => {
       program_url: programUrl
     });
     toast.success('URL du programme enregistrée');
+  };
+
+  const refreshParticipantStats = () => {
+    const all = mockParticipantsDB.getAll();
+    setParticipants(all);
+    setTotalParticipants(all.length);
+    setImportMeta(mockParticipantsDB.getImportMetadata());
   };
 
   const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,6 +105,7 @@ export const AdminScreen: React.FC = () => {
       
       if (result.success) {
         toast.success(`✅ ${result.count} participants importés avec succès !`);
+        refreshParticipantStats();
         // Reset file input
         e.target.value = '';
       } else {
@@ -91,14 +123,21 @@ export const AdminScreen: React.FC = () => {
   const handleClearParticipants = () => {
     if (confirm('Êtes-vous sûr de vouloir supprimer tous les participants importés ?')) {
       mockParticipantsDB.clearImported();
+      refreshParticipantStats();
       toast.success('Participants importés supprimés');
     }
   };
 
   // Calculate stats
-  const totalParticipants = mockParticipantsDB.getAll().length;
   const allScans = Object.keys(localStorage).filter(key => key === 'aiday_scans').length;
-  const importMeta = mockParticipantsDB.getImportMetadata();
+
+  const normalizedSearch = participantSearch.trim().toLowerCase();
+  const filteredParticipants = normalizedSearch
+    ? participants.filter(p => {
+        const name = `${p.name} ${p.first_name}`.toLowerCase();
+        return name.includes(normalizedSearch);
+      })
+    : participants;
 
   if (!isLoggedIn) {
     return (
@@ -220,21 +259,60 @@ export const AdminScreen: React.FC = () => {
                 </div>
 
                 <div className="bg-blue-50 p-4 rounded-lg">
-                  <p className="text-sm text-blue-900 mb-2">
-                    <strong>📊 Base de données :</strong>
-                  </p>
-                  <ul className="text-sm text-blue-900 space-y-1">
-                    <li>• Total de participants : <strong>{totalParticipants}</strong></li>
-                    {importMeta && (
-                      <>
-                        <li>• Dernier import : <strong>{new Date(importMeta.lastImportDate).toLocaleString('fr-FR')}</strong></li>
-                        <li>• Participants importés : <strong>{importMeta.participantCount}</strong></li>
-                      </>
-                    )}
-                    {!importMeta && (
-                      <li>• Aucun import CSV effectué</li>
-                    )}
-                  </ul>
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm text-blue-900 mb-2">
+                        <strong>📊 Base de données :</strong>
+                      </p>
+                      <ul className="text-sm text-blue-900 space-y-1">
+                        <li>• Total de participants : <strong>{totalParticipants}</strong></li>
+                        {importMeta && (
+                          <>
+                            <li>• Dernier import : <strong>{new Date(importMeta.lastImportDate).toLocaleString('fr-FR')}</strong></li>
+                            <li>• Participants importés : <strong>{importMeta.participantCount}</strong></li>
+                          </>
+                        )}
+                        {!importMeta && (
+                          <li>• Aucun import CSV effectué</li>
+                        )}
+                      </ul>
+                    </div>
+
+                    <div className="w-full md:max-w-sm">
+                      <Label htmlFor="participants-search" className="text-blue-900">
+                        Recherche participants
+                      </Label>
+                      <Input
+                        id="participants-search"
+                        placeholder="Nom ou prénom"
+                        value={participantSearch}
+                        onChange={(e) => setParticipantSearch(e.target.value)}
+                        className="mt-2 bg-white"
+                      />
+                      <div className="mt-3 max-h-40 overflow-auto rounded-md border border-blue-200 bg-white">
+                        {filteredParticipants.length === 0 ? (
+                          <p className="p-3 text-sm text-gray-500">Aucun participant trouvé</p>
+                        ) : (
+                          <table className="w-full text-sm">
+                            <thead className="sticky top-0 bg-blue-50 text-blue-900">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">Name</th>
+                                <th className="px-3 py-2 text-left font-medium">First name</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredParticipants.map((p) => (
+                                <tr key={p.id} className="border-t border-blue-100">
+                                  <td className="px-3 py-2 text-gray-900">{p.name}</td>
+                                  <td className="px-3 py-2 text-gray-900">{p.first_name}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex gap-3">

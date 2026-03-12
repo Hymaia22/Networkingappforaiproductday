@@ -34,6 +34,24 @@ const STORAGE_KEYS = {
   IMPORT_META: 'aiday_import_meta' // Metadata about last import
 };
 
+const COOKIE_KEYS = {
+  CURRENT_USER: 'aiday_current_user_barcode'
+};
+
+const setCookie = (name: string, value: string, days: number) => {
+  const maxAge = days * 24 * 60 * 60;
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax`;
+};
+
+const getCookie = (name: string): string | null => {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
+const deleteCookie = (name: string) => {
+  document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax`;
+};
+
 export interface ImportMetadata {
   lastImportDate: string;
   participantCount: number;
@@ -103,14 +121,13 @@ export const mockSettings: Settings = {
 - Networking drinks : 18h00
 
 N'oubliez pas de scanner les badges de vos contacts pour faciliter le suivi !`,
-  program_url: "https://forwarddata-2025-schedule.netlify.app/"
+  program_url: "https://hymaia.github.io/ai-product-day-program/planning.html"
 };
 
-// Helper to get all participants (default + imported)
+// Helper to get all participants (imported only; defaults disabled)
 const getAllParticipants = (): Participant[] => {
   const stored = localStorage.getItem(STORAGE_KEYS.PARTICIPANTS);
-  const imported: Participant[] = stored ? JSON.parse(stored) : [];
-  return [...mockParticipants, ...imported];
+  return stored ? JSON.parse(stored) : [];
 };
 
 export const mockAuth = {
@@ -118,17 +135,29 @@ export const mockAuth = {
     const participant = getAllParticipants().find(p => p.barcode === barcode);
     if (participant) {
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(participant));
+      setCookie(COOKIE_KEYS.CURRENT_USER, barcode, 7);
     }
     return participant || null;
   },
   
   logout: () => {
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    deleteCookie(COOKIE_KEYS.CURRENT_USER);
   },
   
   getCurrentUser: (): Participant | null => {
     const stored = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    return stored ? JSON.parse(stored) : null;
+    if (stored) return JSON.parse(stored);
+
+    const barcode = getCookie(COOKIE_KEYS.CURRENT_USER);
+    if (!barcode) return null;
+
+    const participant = getAllParticipants().find(p => p.barcode === barcode);
+    if (participant) {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(participant));
+      return participant;
+    }
+    return null;
   },
   
   isAuthenticated: (): boolean => {
@@ -233,51 +262,95 @@ export const mockParticipantsDB = {
   
   importFromCSV: (csvText: string): { success: boolean; count?: number; error?: string } => {
     try {
-      // Helper function to parse CSV line with semicolon and quotes
-      const parseCSVLine = (line: string): string[] => {
-        const values: string[] = [];
+      // Robust CSV parser for semicolon-delimited data with quotes and embedded newlines
+      const parseCSV = (text: string): string[][] => {
+        const rows: string[][] = [];
+        let row: string[] = [];
         let current = '';
         let inQuotes = false;
-        
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          const nextChar = line[i + 1];
-          
+
+        for (let i = 0; i < text.length; i++) {
+          const char = text[i];
+          const nextChar = text[i + 1];
+
           if (char === '"') {
             if (inQuotes && nextChar === '"') {
-              // Escaped quote
               current += '"';
-              i++; // Skip next quote
+              i++;
             } else {
-              // Toggle quote state
               inQuotes = !inQuotes;
             }
-          } else if (char === ';' && !inQuotes) {
-            // End of value
-            values.push(current);
-            current = '';
-          } else {
-            current += char;
+            continue;
           }
+
+          if (!inQuotes && char === ';') {
+            row.push(current);
+            current = '';
+            continue;
+          }
+
+          if (!inQuotes && (char === '\n' || char === '\r')) {
+            if (char === '\r' && nextChar === '\n') {
+              i++;
+            }
+            row.push(current);
+            current = '';
+            if (row.some(cell => cell.trim())) {
+              rows.push(row);
+            }
+            row = [];
+            continue;
+          }
+
+          current += char;
         }
-        values.push(current); // Add last value
-        return values;
+
+        row.push(current);
+        if (row.some(cell => cell.trim())) {
+          rows.push(row);
+        }
+
+        return rows;
       };
-      
-      const lines = csvText.split('\n').filter(line => line.trim());
-      if (lines.length < 2) {
+
+      const rows = parseCSV(csvText);
+      if (rows.length < 2) {
         return { success: false, error: "Le fichier CSV est vide" };
       }
       
       // Parse header
-      const header = parseCSVLine(lines[0]);
-      const barcodeIdx = header.indexOf('Barcode');
-      const nameIdx = header.indexOf('Name');
-      const firstNameIdx = header.indexOf('First name');
-      const emailIdx = header.indexOf('Email');
-      const entrepriseIdx = header.indexOf('Entreprise - #11');
-      const professionIdx = header.indexOf('Profession - #12');
-      const ticketIdx = header.indexOf('Ticket');
+      const header = rows[0];
+      const headerHasLeadingEmpty = header[0]?.trim() === '';
+      const normalizedHeader = header.map(h =>
+        h.replace(/^\uFEFF/, '').trim().toLowerCase()
+      );
+      const findIndex = (candidates: string[]): number => {
+        for (const candidate of candidates) {
+          const idx = normalizedHeader.indexOf(candidate);
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+
+      const barcodeIdx = findIndex(['barcode']);
+      const nameIdx = findIndex(['name', 'nom']);
+      const firstNameIdx = findIndex(['first name', 'firstname', 'first_name', 'prénom', 'prenom']);
+      const emailIdx = findIndex(['email', 'e-mail']);
+      const entrepriseIdx = findIndex([
+        'entreprise - #11',
+        'entreprise',
+        'company',
+        'company name',
+        'organisation'
+      ]);
+      const professionIdx = findIndex([
+        'profession - #12',
+        'profession',
+        'role',
+        'job title',
+        'poste'
+      ]);
+      const ticketIdx = findIndex(['ticket']);
       
       if (barcodeIdx === -1 || nameIdx === -1 || firstNameIdx === -1) {
         return { success: false, error: "Colonnes requises manquantes (Barcode, Name, First name)" };
@@ -286,8 +359,14 @@ export const mockParticipantsDB = {
       const newParticipants: Participant[] = [];
       
       // Parse data rows (skip header)
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCSVLine(lines[i]);
+      for (let i = 1; i < rows.length; i++) {
+        const cols = rows[i];
+        if (headerHasLeadingEmpty && cols.length === header.length - 1) {
+          cols.unshift('');
+        }
+        if (cols.length < header.length) {
+          cols.push(...Array(header.length - cols.length).fill(''));
+        }
         
         const barcode = cols[barcodeIdx]?.trim();
         const name = cols[nameIdx]?.trim();
@@ -356,17 +435,17 @@ export const mockExportDB = {
     const allParticipants = getAllParticipants();
     const companyMap = new Map<string, { scanner: Participant; contacts: Array<{ participant: Participant; scan: Scan }> }>();
     
-    // Group scans by scanner's company
-    allScans.forEach(scan => {
-      const scanner = allParticipants.find(p => p.id === scan.scanner_id);
-      const scanned = allParticipants.find(p => p.id === scan.scanned_id);
-      
-      if (!scanner || !scanned || !scanner.entreprise) return;
-      
-      const company = scanner.entreprise;
-      if (!companyMap.has(company)) {
-        companyMap.set(company, { scanner, contacts: [] });
-      }
+  // Group scans by scanned person's company
+  allScans.forEach(scan => {
+    const scanner = allParticipants.find(p => p.id === scan.scanner_id);
+    const scanned = allParticipants.find(p => p.id === scan.scanned_id);
+    
+    if (!scanner || !scanned || !scanned.entreprise) return;
+    
+    const company = scanned.entreprise;
+    if (!companyMap.has(company)) {
+      companyMap.set(company, { scanner, contacts: [] });
+    }
       
       const entry = companyMap.get(company)!;
       entry.contacts.push({ participant: scanned, scan });

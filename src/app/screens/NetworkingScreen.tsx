@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogOut, Scan, UserPlus } from 'lucide-react';
+import { Download, LogOut, Scan, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -56,10 +56,58 @@ export const NetworkingScreen: React.FC = () => {
     setLastScan(null);
   };
 
+  const handleExportContacts = () => {
+    if (scans.length === 0) {
+      toast.error('Aucun contact à exporter');
+      return;
+    }
+
+    const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    let csv = 'Nom,Prénom,Email,Entreprise,Profession,Note,Date du scan\n';
+
+    scans.forEach((scan) => {
+      const participant = mockScansDB.getParticipant(scan.scanned_id);
+      if (!participant) return;
+
+      const row = [
+        participant.name,
+        participant.first_name,
+        participant.email,
+        participant.entreprise,
+        participant.profession,
+        escapeCsv(scan.note || ''),
+        new Date(scan.timestamp).toLocaleString('fr-FR')
+      ].join(',');
+      csv += row + '\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `contacts_scannes_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Sort scans by timestamp (most recent first)
   const sortedScans = [...scans].sort((a, b) => 
     new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
+
+  const scannedParticipants = sortedScans
+    .map(scan => mockScansDB.getParticipant(scan.scanned_id))
+    .filter((p): p is NonNullable<typeof p> => !!p);
+
+  const uniqueCompanies = new Set(
+    scannedParticipants
+      .map(p => p.entreprise)
+      .filter(Boolean)
+  );
+
+  const lastScanDate = sortedScans[0]?.timestamp;
 
   // Get the participant details for the last scanned person
   const lastScannedPerson = lastScan ? mockScansDB.getParticipant(lastScan.scanned_id) : null;
@@ -88,6 +136,34 @@ export const NetworkingScreen: React.FC = () => {
 
       {/* Content */}
       <main className="px-6 py-6 max-w-screen-sm mx-auto">
+        {scans.length > 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm mb-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="grid grid-cols-2 gap-4 sm:gap-6">
+                <div>
+                  <p className="text-xs text-gray-500">Contacts scannés</p>
+                  <p className="text-2xl font-semibold text-gray-900">{scans.length}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Entreprises</p>
+                  <p className="text-2xl font-semibold text-gray-900">{uniqueCompanies.size}</p>
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <p className="text-xs text-gray-500">Dernier scan</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {lastScanDate ? new Date(lastScanDate).toLocaleString('fr-FR') : '—'}
+                  </p>
+                </div>
+              </div>
+
+              <Button onClick={handleExportContacts} className="bg-[#CDFF00] hover:bg-[#b8e600] text-black">
+                <Download className="w-4 h-4 mr-2" />
+                Exporter
+              </Button>
+            </div>
+          </div>
+        )}
+
         {scans.length === 0 ? (
           /* Empty State */
           <div className="flex flex-col items-center justify-center py-16 px-6">

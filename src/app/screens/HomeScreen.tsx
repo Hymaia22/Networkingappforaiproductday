@@ -109,15 +109,6 @@ export const HomeScreen: React.FC = () => {
           </button>
         </div>
 
-        {/* Brand Showcase Link - Dev only */}
-        <div className="mt-4">
-          <button
-            onClick={() => navigate("/brand-showcase")}
-            className="w-full bg-gray-100 rounded-lg p-3 border border-gray-300 hover:bg-gray-200 transition-all text-center text-sm text-gray-600"
-          >
-            🎨 Voir le Brand Showcase
-          </button>
-        </div>
       </main>
 
       {/* Bottom Navigation */}
