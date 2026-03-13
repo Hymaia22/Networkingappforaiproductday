@@ -38,29 +38,6 @@ Cette version est complètement prête pour la production avec toutes les foncti
 
 ---
 
-## 🔐 Accès Admin
-
-### Backoffice : `/admin`
-
-**Identifiants de production** :
-```
-Email    : admin@aiproductday.com
-Password : admin123
-```
-
-⚠️ **IMPORTANT** : Changez ces identifiants avant le déploiement !
-Modifiez dans `/src/app/data/mockData.ts` :
-
-```typescript
-export const mockAdminAuth = {
-  login: (email: string, password: string): boolean => {
-    return email === "VOTRE_EMAIL" && password === "VOTRE_MOT_DE_PASSE";
-  }
-};
-```
-
----
-
 ## 📋 Checklist Avant Déploiement
 
 ### Sécurité

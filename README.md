@@ -51,13 +51,6 @@ Application mobile de networking pour la conférence AI Product Day avec scan QR
 
 **Important** : En local, la caméra ne fonctionne pas (erreur normale). L'app bascule automatiquement vers la saisie manuelle.
 
-**Codes de test disponibles** :
-- `AIDAY2025001` - Marie Dupont (TechCorp)
-- `AIDAY2025002` - Thomas Martin (Innovate.io)
-- `AIDAY2025003` - Sophie Bernard (AI Start)
-- `AIDAY2025004` - Laurent Petit (Digital Solutions)
-- `AIDAY2025005` - Julie Robert (MLOps AI)
-
 ### Accès Admin
 
 **URL** : `/admin`
@@ -65,7 +58,7 @@ Application mobile de networking pour la conférence AI Product Day avec scan QR
 **Identifiants par défaut** :
 ```
 Email    : admin@aiproductday.com
-Password : admin123
+Password : *****
 ```
 
 ⚠️ **À CHANGER avant la production !** (voir [PRODUCTION_READY.md](./PRODUCTION_READY.md))

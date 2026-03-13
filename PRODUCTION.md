@@ -18,7 +18,7 @@
 
 #### ✅ Authentification
 - **Scan de badge** : connexion via QR code du badge participant
-- **Admin** : `admin@aiproductday.com` / `admin123`
+- **Admin** : `admin@aiproductday.com` / `*******`
 - **Sécurité** : session persistante dans localStorage
 
 ### 📱 Utilisation
