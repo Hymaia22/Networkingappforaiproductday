@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, LogOut, Scan, UserPlus } from 'lucide-react';
+import { Download, LogOut, Scan, Trash2, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -9,7 +9,6 @@ import { QRScannerModal } from '../components/QRScannerModal';
 import { ScanConfirmationModal } from '../components/ScanConfirmationModal';
 import { Logo } from '../components/Logo';
 import { useApp } from '../context/AppContext';
-import { mockScansDB } from '../data/mockData';
 import { Scan as ScanType } from '../data/mockData';
 import { toast } from 'sonner';
 
@@ -17,7 +16,7 @@ export const NetworkingScreen: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [lastScan, setLastScan] = useState<ScanType | null>(null);
-  const { scans, addScan, updateScanNote, logout } = useApp();
+  const { scans, addScan, updateScanNote, clearScans, logout, getParticipantById } = useApp();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -66,7 +65,7 @@ export const NetworkingScreen: React.FC = () => {
     let csv = 'Nom,Prénom,Email,Entreprise,Profession,Note,Date du scan\n';
 
     scans.forEach((scan) => {
-      const participant = mockScansDB.getParticipant(scan.scanned_id);
+      const participant = getParticipantById(scan.scanned_id);
       if (!participant) return;
 
       const row = [
@@ -92,13 +91,24 @@ export const NetworkingScreen: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const handleResetScans = () => {
+    if (scans.length === 0) {
+      toast.error('Aucun contact à réinitialiser');
+      return;
+    }
+    if (confirm('Êtes-vous sûr de vouloir réinitialiser vos contacts scannés ?')) {
+      clearScans();
+      toast.success('Contacts scannés réinitialisés');
+    }
+  };
+
   // Sort scans by timestamp (most recent first)
   const sortedScans = [...scans].sort((a, b) => 
     new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
 
   const scannedParticipants = sortedScans
-    .map(scan => mockScansDB.getParticipant(scan.scanned_id))
+    .map(scan => getParticipantById(scan.scanned_id))
     .filter((p): p is NonNullable<typeof p> => !!p);
 
   const uniqueCompanies = new Set(
@@ -110,7 +120,7 @@ export const NetworkingScreen: React.FC = () => {
   const lastScanDate = sortedScans[0]?.timestamp;
 
   // Get the participant details for the last scanned person
-  const lastScannedPerson = lastScan ? mockScansDB.getParticipant(lastScan.scanned_id) : null;
+  const lastScannedPerson = lastScan ? getParticipantById(lastScan.scanned_id) : null;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -156,10 +166,16 @@ export const NetworkingScreen: React.FC = () => {
                 </div>
               </div>
 
-              <Button onClick={handleExportContacts} className="bg-[#CDFF00] hover:bg-[#b8e600] text-black">
-                <Download className="w-4 h-4 mr-2" />
-                Exporter
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={handleExportContacts} className="bg-[#CDFF00] hover:bg-[#b8e600] text-black">
+                  <Download className="w-4 h-4 mr-2" />
+                  Exporter
+                </Button>
+                <Button variant="outline" onClick={handleResetScans} className="border-red-200 text-red-700 hover:bg-red-50">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Réinitialiser
+                </Button>
+              </div>
             </div>
           </div>
         )}

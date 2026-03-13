@@ -9,6 +9,7 @@ export interface Participant {
   entreprise: string;
   profession: string;
   ticket: string;
+  created_at?: string;
 }
 
 export interface Scan {
@@ -229,6 +230,18 @@ export const mockScansDB = {
   
   getParticipant: (id: string): Participant | undefined => {
     return getAllParticipants().find(p => p.id === id);
+  },
+
+  clearForScanner: (scanner_id: string): void => {
+    const stored = localStorage.getItem(STORAGE_KEYS.SCANS);
+    if (!stored) return;
+
+    const allScans: Scan[] = JSON.parse(stored).map((s: any) => ({
+      ...s,
+      timestamp: new Date(s.timestamp)
+    }));
+    const remaining = allScans.filter(s => s.scanner_id !== scanner_id);
+    localStorage.setItem(STORAGE_KEYS.SCANS, JSON.stringify(remaining));
   }
 };
 
@@ -418,6 +431,10 @@ export const mockParticipantsDB = {
   clearImported: (): void => {
     localStorage.removeItem(STORAGE_KEYS.PARTICIPANTS);
     localStorage.removeItem(STORAGE_KEYS.IMPORT_META);
+  },
+
+  resetAll: (): void => {
+    localStorage.removeItem(STORAGE_KEYS.SCANS);
   }
 };
 

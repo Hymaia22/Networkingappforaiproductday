@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Clock, Edit2, Check } from 'lucide-react';
-import { Scan, mockScansDB } from '../data/mockData';
+import { Scan } from '../data/mockData';
 import { Textarea } from './ui/textarea';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { useApp } from '../context/AppContext';
 
 interface ContactCardProps {
   scan: Scan;
-  onNoteUpdate: (scanId: string, note: string) => void;
+  onNoteUpdate: (scanId: string, note: string) => void | Promise<void>;
 }
 
 export const ContactCard: React.FC<ContactCardProps> = ({ scan, onNoteUpdate }) => {
-  const participant = mockScansDB.getParticipant(scan.scanned_id);
+  const { getParticipantById } = useApp();
+  const participant = getParticipantById(scan.scanned_id);
   const [note, setNote] = useState(scan.note);
   const [isEditing, setIsEditing] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout>();

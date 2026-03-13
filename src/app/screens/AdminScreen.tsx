@@ -8,7 +8,9 @@ import { Textarea } from '../components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useApp } from '../context/AppContext';
-import { mockAdminAuth, mockParticipantsDB, mockExportDB } from '../data/mockData';
+import { Participant, Scan } from '../data/mockData';
+import { supabase } from '../../lib/supabaseClient';
+import { supaParticipants, supaScans } from '../data/supabaseRepo';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 
@@ -16,29 +18,23 @@ export const AdminScreen: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const { settings, updateSettings } = useApp();
+  const { settings, updateSettings, refreshParticipants } = useApp();
   const navigate = useNavigate();
-  const [totalParticipants, setTotalParticipants] = useState(() => mockParticipantsDB.getAll().length);
-  const [importMeta, setImportMeta] = useState(() => mockParticipantsDB.getImportMetadata());
-  const [participants, setParticipants] = useState(() => mockParticipantsDB.getAll());
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [allScans, setAllScans] = useState<Scan[]>([]);
+  const [lastImportDate, setLastImportDate] = useState<string | null>(null);
   const [participantSearch, setParticipantSearch] = useState('');
 
-  const setAdminCookie = () => {
-    document.cookie = `aiday_admin_session=1; Max-Age=${7 * 24 * 60 * 60}; Path=/; SameSite=Lax`;
-  };
-
-  const clearAdminCookie = () => {
-    document.cookie = 'aiday_admin_session=; Max-Age=0; Path=/; SameSite=Lax';
-  };
-
-  const hasAdminCookie = (): boolean => {
-    return /(?:^|; )aiday_admin_session=1(?:;|$)/.test(document.cookie);
-  };
-
   useEffect(() => {
-    if (hasAdminCookie()) {
-      setIsLoggedIn(true);
-    }
+    supabase.auth.getSession().then(({ data }) => {
+      setIsLoggedIn(!!data.session);
+    });
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session);
+    });
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   // Admin settings state
@@ -46,23 +42,30 @@ export const AdminScreen: React.FC = () => {
   const [homeContent, setHomeContent] = useState(settings.home_content);
   const [programUrl, setProgramUrl] = useState(settings.program_url);
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    setHomeTitle(settings.home_title);
+    setHomeContent(settings.home_content);
+    setProgramUrl(settings.program_url);
+  }, [settings.home_title, settings.home_content, settings.program_url]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (mockAdminAuth.login(email, password)) {
-      setIsLoggedIn(true);
-      setAdminCookie();
-      toast.success('Connexion admin réussie');
-    } else {
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+    if (error) {
       toast.error('Identifiants incorrects');
+      return;
     }
+    toast.success('Connexion admin réussie');
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
     setEmail('');
     setPassword('');
-    clearAdminCookie();
+    supabase.auth.signOut();
     navigate('/login');
   };
 
@@ -81,14 +84,151 @@ export const AdminScreen: React.FC = () => {
     toast.success('URL du programme enregistrée');
   };
 
-  const refreshParticipantStats = () => {
-    const all = mockParticipantsDB.getAll();
-    setParticipants(all);
-    setTotalParticipants(all.length);
-    setImportMeta(mockParticipantsDB.getImportMetadata());
+  const refreshParticipantStats = async () => {
+    const [allParticipants, scans] = await Promise.all([
+      supaParticipants.getAll(),
+      supaScans.getAll()
+    ]);
+    setParticipants(allParticipants);
+    setAllScans(scans);
+
+    const latest = allParticipants
+      .map(p => p.created_at)
+      .filter((d): d is string => !!d)
+      .map(d => new Date(d))
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+    setLastImportDate(latest ? latest.toISOString() : null);
   };
 
-  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const parseAndImportCSV = async (csvText: string): Promise<number> => {
+    const parseCSV = (text: string): string[][] => {
+      const rows: string[][] = [];
+      let row: string[] = [];
+      let current = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+          continue;
+        }
+
+        if (!inQuotes && char === ';') {
+          row.push(current);
+          current = '';
+          continue;
+        }
+
+        if (!inQuotes && (char === '\n' || char === '\r')) {
+          if (char === '\r' && nextChar === '\n') {
+            i++;
+          }
+          row.push(current);
+          current = '';
+          if (row.some(cell => cell.trim())) {
+            rows.push(row);
+          }
+          row = [];
+          continue;
+        }
+
+        current += char;
+      }
+
+      row.push(current);
+      if (row.some(cell => cell.trim())) {
+        rows.push(row);
+      }
+
+      return rows;
+    };
+
+    const rows = parseCSV(csvText);
+    if (rows.length < 2) {
+      throw new Error('Le fichier CSV est vide');
+    }
+
+    const header = rows[0];
+    const headerHasLeadingEmpty = header[0]?.trim() === '';
+    const normalizedHeader = header.map(h =>
+      h.replace(/^\uFEFF/, '').trim().toLowerCase()
+    );
+    const findIndex = (candidates: string[]): number => {
+      for (const candidate of candidates) {
+        const idx = normalizedHeader.indexOf(candidate);
+        if (idx !== -1) return idx;
+      }
+      return -1;
+    };
+
+    const barcodeIdx = findIndex(['barcode']);
+    const nameIdx = findIndex(['name', 'nom']);
+    const firstNameIdx = findIndex(['first name', 'firstname', 'first_name', 'prénom', 'prenom']);
+    const emailIdx = findIndex(['email', 'e-mail']);
+    const entrepriseIdx = findIndex([
+      'entreprise - #11',
+      'entreprise',
+      'company',
+      'company name',
+      'organisation'
+    ]);
+    const professionIdx = findIndex([
+      'profession - #12',
+      'profession',
+      'role',
+      'job title',
+      'poste'
+    ]);
+    const ticketIdx = findIndex(['ticket']);
+
+    if (barcodeIdx === -1 || nameIdx === -1 || firstNameIdx === -1) {
+      throw new Error('Colonnes requises manquantes (Barcode, Name, First name)');
+    }
+
+    const parsed: Participant[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const cols = rows[i];
+      if (headerHasLeadingEmpty && cols.length === header.length - 1) {
+        cols.unshift('');
+      }
+      if (cols.length < header.length) {
+        cols.push(...Array(header.length - cols.length).fill(''));
+      }
+
+      const barcode = cols[barcodeIdx]?.trim();
+      const name = cols[nameIdx]?.trim();
+      const firstName = cols[firstNameIdx]?.trim();
+      if (!barcode || !name || !firstName) continue;
+
+      parsed.push({
+        id: barcode,
+        barcode,
+        name,
+        first_name: firstName,
+        email: cols[emailIdx]?.trim() || '',
+        entreprise: cols[entrepriseIdx]?.trim() || '',
+        profession: cols[professionIdx]?.trim() || '',
+        ticket: cols[ticketIdx]?.trim() || 'Standard'
+      });
+    }
+
+    if (parsed.length === 0) {
+      throw new Error('Aucun participant valide trouvé dans le CSV');
+    }
+
+    await supaParticipants.upsertMany(parsed);
+    return parsed.length;
+  };
+
+  const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -101,16 +241,16 @@ export const AdminScreen: React.FC = () => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const csvText = event.target?.result as string;
-      const result = mockParticipantsDB.importFromCSV(csvText);
-      
-      if (result.success) {
-        toast.success(`✅ ${result.count} participants importés avec succès !`);
-        refreshParticipantStats();
-        // Reset file input
-        e.target.value = '';
-      } else {
-        toast.error(`❌ ${result.error}`);
-      }
+      parseAndImportCSV(csvText)
+        .then((count) => {
+          toast.success(`✅ ${count} participants importés avec succès !`);
+          refreshParticipantStats();
+          refreshParticipants();
+          e.target.value = '';
+        })
+        .catch((error: Error) => {
+          toast.error(`❌ ${error.message}`);
+        });
     };
     
     reader.onerror = () => {
@@ -120,16 +260,23 @@ export const AdminScreen: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const handleClearParticipants = () => {
+  const handleClearParticipants = async () => {
     if (confirm('Êtes-vous sûr de vouloir supprimer tous les participants importés ?')) {
-      mockParticipantsDB.clearImported();
-      refreshParticipantStats();
+      await supaParticipants.deleteAll();
+      await refreshParticipantStats();
+      refreshParticipants();
       toast.success('Participants importés supprimés');
     }
   };
 
-  // Calculate stats
-  const allScans = Object.keys(localStorage).filter(key => key === 'aiday_scans').length;
+
+  useEffect(() => {
+    refreshParticipantStats().catch((error) => {
+      console.error('Admin data load error:', error);
+    });
+  }, []);
+
+  const totalParticipants = participants.length;
 
   const normalizedSearch = participantSearch.trim().toLowerCase();
   const filteredParticipants = normalizedSearch
@@ -138,6 +285,87 @@ export const AdminScreen: React.FC = () => {
         return name.includes(normalizedSearch);
       })
     : participants;
+
+  const exportAllParticipants = () => {
+    if (participants.length === 0) {
+      toast.error('Aucun participant à exporter');
+      return;
+    }
+    let csv = 'Barcode,Nom,Prénom,Email,Entreprise,Profession,Ticket\n';
+    participants.forEach(p => {
+      const row = [
+        p.barcode,
+        p.name,
+        p.first_name,
+        p.email,
+        p.entreprise,
+        p.profession,
+        p.ticket
+      ].join(',');
+      csv += row + '\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `tous_participants_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getContactsByCompany = () => {
+    const participantMap = new Map(participants.map(p => [p.id, p]));
+    const companyMap = new Map<string, { contacts: Array<{ participant: Participant; scan: Scan }> }>();
+
+    allScans.forEach(scan => {
+      const scanned = participantMap.get(scan.scanned_id);
+      if (!scanned || !scanned.entreprise) return;
+
+      const company = scanned.entreprise;
+      if (!companyMap.has(company)) {
+        companyMap.set(company, { contacts: [] });
+      }
+      const entry = companyMap.get(company)!;
+      entry.contacts.push({ participant: scanned, scan });
+    });
+
+    return companyMap;
+  };
+
+  const downloadCSVForCompany = (company: string) => {
+    const companyData = getContactsByCompany();
+    const data = companyData.get(company);
+    if (!data || data.contacts.length === 0) {
+      toast.error('Aucun contact à exporter');
+      return;
+    }
+    let csv = 'Nom,Prénom,Email,Entreprise,Profession,Note,Date du scan\n';
+    data.contacts.forEach(({ participant, scan }) => {
+      const row = [
+        participant.name,
+        participant.first_name,
+        participant.email,
+        participant.entreprise,
+        participant.profession,
+        `"${scan.note.replace(/\"/g, '""')}"`,
+        new Date(scan.timestamp).toLocaleString('fr-FR')
+      ].join(',');
+      csv += row + '\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `contacts_${company.replace(/\\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   if (!isLoggedIn) {
     return (
@@ -266,15 +494,14 @@ export const AdminScreen: React.FC = () => {
                       </p>
                       <ul className="text-sm text-blue-900 space-y-1">
                         <li>• Total de participants : <strong>{totalParticipants}</strong></li>
-                        {importMeta && (
-                          <>
-                            <li>• Dernier import : <strong>{new Date(importMeta.lastImportDate).toLocaleString('fr-FR')}</strong></li>
-                            <li>• Participants importés : <strong>{importMeta.participantCount}</strong></li>
-                          </>
-                        )}
-                        {!importMeta && (
-                          <li>• Aucun import CSV effectué</li>
-                        )}
+                    {lastImportDate ? (
+                      <>
+                        <li>• Dernier import : <strong>{new Date(lastImportDate).toLocaleString('fr-FR')}</strong></li>
+                        <li>• Participants importés : <strong>{totalParticipants}</strong></li>
+                      </>
+                    ) : (
+                      <li>• Aucun import CSV effectué</li>
+                    )}
                       </ul>
                     </div>
 
@@ -318,12 +545,8 @@ export const AdminScreen: React.FC = () => {
                 <div className="flex gap-3">
                   <Button
                     onClick={() => {
-                      const success = mockExportDB.downloadAllParticipants();
-                      if (success) {
-                        toast.success('Export CSV de tous les participants généré');
-                      } else {
-                        toast.error('Erreur lors de l\'export');
-                      }
+                      exportAllParticipants();
+                      toast.success('Export CSV de tous les participants généré');
                     }}
                     className="flex-1 bg-[#CDFF00] hover:bg-[#b8e600] text-black"
                   >
@@ -338,6 +561,7 @@ export const AdminScreen: React.FC = () => {
                     <Trash2 className="w-4 h-4 mr-2" />
                     Supprimer les imports
                   </Button>
+
                 </div>
               </CardContent>
             </Card>
@@ -354,7 +578,7 @@ export const AdminScreen: React.FC = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 {(() => {
-                  const companyData = mockExportDB.getContactsByCompany();
+                  const companyData = getContactsByCompany();
                   const companies = Array.from(companyData.keys()).sort();
                   
                   if (companies.length === 0) {
@@ -388,12 +612,8 @@ export const AdminScreen: React.FC = () => {
                             </div>
                             <Button
                               onClick={() => {
-                                const success = mockExportDB.downloadCSVForCompany(company);
-                                if (success) {
-                                  toast.success(`Export CSV généré pour ${company}`);
-                                } else {
-                                  toast.error('Erreur lors de l\'export');
-                                }
+                                downloadCSVForCompany(company);
+                                toast.success(`Export CSV généré pour ${company}`);
                               }}
                               size="sm"
                               className="bg-[#CDFF00] hover:bg-[#b8e600] text-black"

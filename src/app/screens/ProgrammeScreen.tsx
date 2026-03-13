@@ -36,6 +36,7 @@ export const ProgrammeScreen: React.FC = () => {
       <div className="flex-1 bg-white">
         <iframe
           src={settings.program_url}
+          key={settings.program_url}
           className="w-full h-full border-0"
           title="Programme de la conférence"
           style={{ minHeight: 'calc(100vh - 64px - 64px)' }}
