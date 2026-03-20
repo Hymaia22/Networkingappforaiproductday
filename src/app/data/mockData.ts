@@ -9,6 +9,7 @@ export interface Participant {
   entreprise: string;
   profession: string;
   ticket: string;
+  category?: string;
   created_at?: string;
 }
 

@@ -188,6 +188,7 @@ export const AdminScreen: React.FC = () => {
       'poste'
     ]);
     const ticketIdx = findIndex(['ticket']);
+    const categoryIdx = findIndex(['category', 'categorie', 'catégorie']);
 
     if (barcodeIdx === -1 || nameIdx === -1 || firstNameIdx === -1) {
       throw new Error('Colonnes requises manquantes (Barcode, Name, First name)');
@@ -216,7 +217,8 @@ export const AdminScreen: React.FC = () => {
         email: cols[emailIdx]?.trim() || '',
         entreprise: cols[entrepriseIdx]?.trim() || '',
         profession: cols[professionIdx]?.trim() || '',
-        ticket: cols[ticketIdx]?.trim() || 'Standard'
+        ticket: cols[ticketIdx]?.trim() || 'Standard',
+        category: cols[categoryIdx]?.trim() || ''
       });
     }
 
@@ -285,6 +287,8 @@ export const AdminScreen: React.FC = () => {
         return name.includes(normalizedSearch);
       })
     : participants;
+
+ 
 
   const exportAllParticipants = () => {
     if (participants.length === 0) {

@@ -44,9 +44,11 @@ export const LoginScreen: React.FC = () => {
         {/* Title */}
         <div className="text-center mb-12">
           <h2 className="text-xl mb-2 text-white">Networking</h2>
-          <p className="text-gray-400">
-            Scannez votre badge pour accéder
-          </p>
+          <div className="inline-block text-left text-gray-400 space-y-1">
+            <p>1) Scan your own QR Code (next to your name)</p>
+            <p>2) Scan every one you want!</p>
+            <p>3) Keep in Touch ;)</p>
+          </div>
         </div>
 
         {/* Scan Button */}
@@ -64,7 +66,7 @@ export const LoginScreen: React.FC = () => {
           ) : (
             <>
               <QrCode className="w-5 h-5 mr-2" />
-              Scanner mon badge
+              Scan YOUR badge first
             </>
           )}
         </Button>
@@ -72,7 +74,7 @@ export const LoginScreen: React.FC = () => {
         {/* Info */}
         <div className="mt-8 p-4 bg-gray-900 rounded-lg border border-gray-800">
           <p className="text-sm text-gray-400 text-center">
-            Autorisez l'accès à la caméra pour scanner votre badge QR
+            Allow camera access to scan your QR badge
           </p>
         </div>
       </div>
