@@ -43,11 +43,11 @@ export const LoginScreen: React.FC = () => {
 
         {/* Title */}
         <div className="text-center mb-12">
-          <h2 className="text-xl mb-2 text-white">Networking</h2>
-          <div className="inline-block text-left text-gray-400 space-y-1">
-            <p>1) Scan your own QR Code (next to your name)</p>
-            <p>2) Scan every one you want!</p>
-            <p>3) Keep in Touch ;)</p>
+          <h2 className="text-4xl mb-3 text-white">Networking</h2>
+          <div className="inline-block rounded-2xl bg-white px-5 py-4 text-left text-base font-semibold leading-relaxed text-black shadow-lg space-y-2">
+            <p>1️⃣ Scan your own QR Code (next to your name)</p>
+            <p>2️⃣ Scan every one you want!</p>
+            <p>3️⃣ Keep in Touch 😉</p>
           </div>
         </div>
 
