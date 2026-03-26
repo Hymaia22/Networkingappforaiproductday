@@ -320,33 +320,33 @@ export const AdminScreen: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const getContactsByCompany = () => {
+  const getContactsByScanner = () => {
     const participantMap = new Map(participants.map(p => [p.id, p]));
-    const companyMap = new Map<string, { contacts: Array<{ participant: Participant; scan: Scan }> }>();
+    const scannerMap = new Map<string, { scanner: Participant; contacts: Array<{ participant: Participant; scan: Scan }> }>();
 
     allScans.forEach(scan => {
+      const scanner = participantMap.get(scan.scanner_id);
       const scanned = participantMap.get(scan.scanned_id);
-      if (!scanned || !scanned.entreprise) return;
+      if (!scanner || !scanned) return;
 
-      const company = scanned.entreprise;
-      if (!companyMap.has(company)) {
-        companyMap.set(company, { contacts: [] });
+      if (!scannerMap.has(scan.scanner_id)) {
+        scannerMap.set(scan.scanner_id, { scanner, contacts: [] });
       }
-      const entry = companyMap.get(company)!;
+      const entry = scannerMap.get(scan.scanner_id)!;
       entry.contacts.push({ participant: scanned, scan });
     });
 
-    return companyMap;
+    return scannerMap;
   };
 
-  const downloadCSVForCompany = (company: string) => {
-    const companyData = getContactsByCompany();
-    const data = companyData.get(company);
+  const downloadCSVForScanner = (scannerId: string) => {
+    const scannerData = getContactsByScanner();
+    const data = scannerData.get(scannerId);
     if (!data || data.contacts.length === 0) {
       toast.error('Aucun contact à exporter');
       return;
     }
-    let csv = 'Nom,Prénom,Email,Entreprise,Profession,Note,Date du scan\n';
+    let csv = '\uFEFFNom,Prénom,Email,Entreprise,Profession,Note,Date du scan\n';
     data.contacts.forEach(({ participant, scan }) => {
       const row = [
         participant.name,
@@ -354,7 +354,7 @@ export const AdminScreen: React.FC = () => {
         participant.email,
         participant.entreprise,
         participant.profession,
-        `"${scan.note.replace(/\"/g, '""')}"`,
+        `"${scan.note.replace(/\"/g, '""').replace(/\r\n|\r|\n/g, ' ')}"`,
         new Date(scan.timestamp).toLocaleString('fr-FR')
       ].join(',');
       csv += row + '\n';
@@ -364,7 +364,8 @@ export const AdminScreen: React.FC = () => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `contacts_${company.replace(/\\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+    const scannerName = `${data.scanner.first_name}_${data.scanner.name}`.replace(/\s+/g, '_');
+    link.setAttribute('download', `contacts_${scannerName}_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -575,49 +576,54 @@ export const AdminScreen: React.FC = () => {
           <TabsContent value="export">
             <Card>
               <CardHeader>
-                <CardTitle>Export des contacts par entreprise</CardTitle>
+                <CardTitle>Export des contacts par participant</CardTitle>
                 <CardDescription>
-                  Téléchargez les contacts scannés, groupés par entreprise
+                  Téléchargez les contacts scannés, groupés par participant qui a scanné
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {(() => {
-                  const companyData = getContactsByCompany();
-                  const companies = Array.from(companyData.keys()).sort();
-                  
-                  if (companies.length === 0) {
+                  const scannerData = getContactsByScanner();
+                  const scannerIds = Array.from(scannerData.keys()).sort((a, b) => {
+                    const sa = scannerData.get(a)!.scanner;
+                    const sb = scannerData.get(b)!.scanner;
+                    return `${sa.first_name} ${sa.name}`.localeCompare(`${sb.first_name} ${sb.name}`);
+                  });
+
+                  if (scannerIds.length === 0) {
                     return (
                       <div className="text-center py-12">
                         <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                         <p className="text-gray-600">Aucun contact scanné pour le moment</p>
                         <p className="text-sm text-gray-500 mt-2">
-                          Les contacts scannés apparaîtront ici groupés par entreprise
+                          Les contacts scannés apparaîtront ici groupés par participant
                         </p>
                       </div>
                     );
                   }
-                  
+
                   return (
                     <div className="space-y-3">
-                      {companies.map(company => {
-                        const data = companyData.get(company)!;
-                        const contactCount = data.contacts.length;
-                        
+                      {scannerIds.map(scannerId => {
+                        const data = scannerData.get(scannerId)!;
+                        const { scanner, contacts } = data;
+                        const contactCount = contacts.length;
+
                         return (
                           <div
-                            key={company}
+                            key={scannerId}
                             className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
                           >
                             <div className="flex-1">
-                              <h4 className="font-medium">{company}</h4>
+                              <h4 className="font-medium">{scanner.first_name} {scanner.name}</h4>
                               <p className="text-sm text-gray-600">
-                                {contactCount} contact{contactCount > 1 ? 's' : ''} scanné{contactCount > 1 ? 's' : ''}
+                                {scanner.entreprise} · {contactCount} contact{contactCount > 1 ? 's' : ''} scanné{contactCount > 1 ? 's' : ''}
                               </p>
                             </div>
                             <Button
                               onClick={() => {
-                                downloadCSVForCompany(company);
-                                toast.success(`Export CSV généré pour ${company}`);
+                                downloadCSVForScanner(scannerId);
+                                toast.success(`Export CSV généré pour ${scanner.first_name} ${scanner.name}`);
                               }}
                               size="sm"
                               className="bg-[#CDFF00] hover:bg-[#b8e600] text-black"
@@ -631,7 +637,7 @@ export const AdminScreen: React.FC = () => {
                     </div>
                   );
                 })()}
-                
+
                 <div className="bg-yellow-50 p-4 rounded-lg mt-4">
                   <p className="text-sm text-yellow-900">
                     💡 <strong>Note :</strong> Le fichier CSV contient les colonnes : Nom, Prénom, Email, Entreprise, Profession, Note, Date du scan
